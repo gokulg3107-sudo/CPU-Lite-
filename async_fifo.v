@@ -1,11 +1,9 @@
-`timescale 1ns/100ps
-
 module async_fifo #(parameter ADDR_WIDTH = 2, parameter DATA_WIDTH = 32) (wclk, wen, wrst, write_datain, rclk, ren, rrst, read_dataout, empty, full);
 input wclk, wen, wrst, rclk, ren, rrst;
 output wire empty;
 output wire full;
 input  [DATA_WIDTH-1:0] write_datain;
-output reg [DATA_WIDTH-1:0] read_dataout;
+output wire [DATA_WIDTH-1:0] read_dataout;
 reg [DATA_WIDTH-1:0] fifo_register [(1<<ADDR_WIDTH)-1:0];
 wire [ADDR_WIDTH:0] b_wptr, g_wptr, b_rptr, g_rptr;
 
@@ -15,10 +13,7 @@ read_pointer_handler  #(.ADDR_WIDTH(ADDR_WIDTH)) w2(rclk, ren, rrst, g_rptr, b_r
 always@(posedge wclk)begin
         if(wen & !full) fifo_register[b_wptr[ADDR_WIDTH-1:0]] <= write_datain;
 end
-always@(posedge rclk or negedge rrst)begin
-        if(!rrst) read_dataout <= 0;
-        else if(ren & !empty) read_dataout <= fifo_register[b_rptr[ADDR_WIDTH-1:0]];
-end
+assign read_dataout = fifo_register[b_rptr[ADDR_WIDTH-1:0]];
 endmodule
 
 
