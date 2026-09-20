@@ -35,21 +35,21 @@ end
 reg rw_bit;
 always@(posedge clk_mem or negedge rst) begin
         if(~rst) rw_bit <= 1'b0;
-        else if (current_state == read_control_signals) rw_bit <= fifo_read_data[0];
+        else if (current_state == read_control_signals & ~fifo_empty) rw_bit <= fifo_read_data[0];
 end
 
 reg [13:0] addr_reg;
 always@(posedge clk_mem or negedge rst) begin
         if(~rst) addr_reg <= 14'd0;
-        else if (current_state == read_start_address) addr_reg <= fifo_read_data[13:0];
+        else if (current_state == read_start_address & ~fifo_empty) addr_reg <= fifo_read_data[13:0];
         else if ((current_state == write_to_memory && ~fifo_empty) | current_state == read_from_memory) addr_reg <= addr_reg + 1'b1;
 end
 
 always@(*) begin
         case(current_state)
         idle: next_state = fifo_empty ? idle : read_control_signals;
-        read_control_signals: next_state = read_start_address;
-        read_start_address: next_state = rw_bit ? read_from_memory : write_to_memory;
+        read_control_signals: next_state = fifo_empty ? read_control_signals : read_start_address;
+        read_start_address: next_state = fifo_empty ? read_start_address : (rw_bit ? read_from_memory : write_to_memory);
         write_to_memory: next_state = fifo_empty ? write_to_memory : (count_word == 4'd15 ? memory_access_done : write_to_memory);
         read_from_memory: next_state = (count_word == 4'd15) ? read_drain : read_from_memory;
         read_drain: next_state = memory_access_done;
@@ -70,7 +70,7 @@ always@(*) begin
         end
         read_control_signals: begin
                 mem_en = 1'b0;
-                ren = 1'b1;
+                ren = ~fifo_empty;
                 wen = 1'b0;
                 mem_rwbar = 1'b1;
                 mem_addr = 14'd0;
@@ -78,7 +78,7 @@ always@(*) begin
         end
         read_start_address: begin
                 mem_en = 1'b0;
-                ren = 1'b1;
+                ren = ~fifo_empty;
                 wen = 1'b0;
                 mem_rwbar = 1'b1;
                 mem_addr = 14'd0;

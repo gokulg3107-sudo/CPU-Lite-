@@ -1,9 +1,11 @@
-module top_mem_chain(clk_cpu, clk_mem, rst, req, rw, line_addr, wdata, done, tx_read_done);
+module top_mem_chain(clk_cpu, clk_mem, rst, req, rw, line_addr, wdata, done, tx_read_done, cache_line, rx_cache_done);
 input clk_cpu, rst, req, rw, clk_mem;
 input [13:0] line_addr;
 input [31:0] wdata;
 output done;
 output wire tx_read_done;
+output wire [511:0] cache_line;
+output wire rx_cache_done;
 
 wire [31:0] tx_fifo_write_data;
 wire tx_wen;
@@ -75,8 +77,16 @@ async_fifo #(.ADDR_WIDTH(5), .DATA_WIDTH(32)) rx(
     .empty(rx_empty), .full(rx_full)
 );
 
-// RX FIFO read side is not used in this testbench
-assign rx_ren = 1'b0;
+// RX FIFO read handler (CPU domain): assembles 16 x 32-bit words read back
+// from memory into one 512-bit cache line.
+rx_fifo_read_handler cpu_reader(
+    .clk_cpu(clk_cpu), .rst(rst),
+    .rdata(rx_read_dataout),
+    .fifo_empty(rx_empty),
+    .ren(rx_ren),
+    .cache_line(cache_line),
+    .done(rx_cache_done)
+);
 
 assign done = tx_done;
 
