@@ -38,5 +38,4 @@ always@(posedge clk_cpu or negedge rst)begin
 	else if (current_state == collecting_data & ren) cache_line <= {cache_line[479:0], rdata};
  	else cache_line <= cache_line;
 end
-assign done = current_state == completion;
 endmodule

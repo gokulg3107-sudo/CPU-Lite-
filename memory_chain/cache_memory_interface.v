@@ -10,6 +10,7 @@ localparam [2:0] idle = 3'd0, send_control_signal = 3'd1, send_starting_address 
 reg [2:0] current_state, next_state;
 reg [3:0] count_word_sent;
 reg isWritten;
+wire [13:0] lookup_line_addr = {lookup_addr[13:4], 4'b0000};
 always@(posedge clk_cpu or negedge rst) begin
 	if(~rst) current_state <= idle;
 	else current_state <= next_state;
@@ -35,10 +36,10 @@ assign updated_cache_line = current_state == transaction_done ? rx_cache_line : 
 always@(*) begin
 	case(current_state)
 	idle, transaction_done, wait_before_reading: line_addr = 14'd0;
-	send_starting_address: line_addr = (isWritten | ~(cache_valid & cache_dirty)) ? lookup_addr : tag_addr;
+	send_starting_address: line_addr = (isWritten | ~(cache_valid & cache_dirty)) ? lookup_line_addr : tag_addr;
 	send_control_signal: line_addr = 14'd0; // don't-care / hold
 	write_line_to_memory: line_addr = tag_addr;
-	load_new_line: line_addr = lookup_addr;
+	load_new_line: line_addr = lookup_line_addr;
  	default: line_addr = 14'd0;
 	endcase
 end	

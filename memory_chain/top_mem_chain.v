@@ -1,4 +1,4 @@
-module top_mem_chain(clk_cpu, clk_mem, rst, req, rw, line_addr, wdata, done, tx_read_done, cache_line, rx_cache_done);
+module top_mem_chain(clk_cpu, clk_mem, rst, req, rw, line_addr, wdata, done, tx_read_done, cache_line, rx_cache_done, tx_empty);
 input clk_cpu, rst, req, rw, clk_mem;
 input [13:0] line_addr;
 input [31:0] wdata;
@@ -6,13 +6,13 @@ output done;
 output wire tx_read_done;
 output wire [511:0] cache_line;
 output wire rx_cache_done;
+output wire tx_empty;
 
 wire [31:0] tx_fifo_write_data;
 wire tx_wen;
 wire tx_done;
 wire tx_ren;
 wire [31:0] tx_read_dataout;
-wire tx_empty;
 wire tx_full;
 
 wire [31:0] rx_fifo_write_data;
@@ -27,6 +27,10 @@ wire [13:0] mem_addr;
 wire mem_en;
 wire mem_rwbar;
 wire [31:0] mem_datain;
+wire mem_valid;
+//Hardcoded for now. Replace with the data_memory valid output when the memory
+//gets a real multi-cycle valid.
+assign mem_valid = 1'b1;
 
 // TX FIFO write handler (CPU domain)
 tx_fifo_write_handler writer(
@@ -52,6 +56,7 @@ tx_fifo_read_handler reader(
     .fifo_empty(tx_empty),
     .fifo_read_data(tx_read_dataout),
     .mem_dataout(mem_dataout),
+    .mem_valid(mem_valid),
     .ren(tx_ren),
     .mem_addr(mem_addr), .mem_en(mem_en), .mem_rwbar(mem_rwbar),
     .wen(rx_wen), .mem_datain(mem_datain),

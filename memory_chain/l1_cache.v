@@ -1,20 +1,25 @@
 `include "header_file.h"
-module l1_cache(clk_cpu, rst, fill_data, start, control_signals, lookup_addr, tag_hit, line_data, line_addr, bidirectional_line_bus, data_out, cpu_data_in, cache_done);
+module l1_cache(clk_cpu, rst, fill_data, start, control_signals, lookup_addr, tag_hit, line_data, line_addr, line_bus_in, data_out, cpu_data_in, cache_done, tag_miss, cache_valid, cache_dirty, tag_addr);
 input clk_cpu, rst, fill_data, start;
+output tag_miss, cache_valid, cache_dirty;
+output [13:0] tag_addr;
 input [1:0] control_signals;
 input [13:0] lookup_addr;
 input [31:0] cpu_data_in;
 output reg tag_hit;
 output [13:0] line_addr;
 output [511:0] line_data;
-inout [511:0] bidirectional_line_bus;
+input [511:0] line_bus_in;
 output reg [31:0] data_out;
 output cache_done;
 wire [4:0] index;
 wire [3:0] offset;
 reg [511:0] data_array [0:31];
-//tag_array[15] -> Valid bit, tag_array[14] -> Dirty bit, tag[13:9] Tag Address, tag[8:4] -> Index, tag [3:0] Offset
-reg [15:0] tag_array [0:31];
+//valid_array/dirty_array: one bit per line, reset to 0. tag_array: address bits [13:9] of the
+//line held at each index, no reset needed since it is only trusted when valid_array[index] is 1.
+//Index (addr[8:4]) is the array address itself and offset (addr[3:0]) selects the word, so neither is stored.
+reg [31:0] valid_array, dirty_array;
+reg [4:0] tag_array [0:31];
 
 localparam [2:0] idle = 3'd0, start_lookup = 3'd1, address_present = 3'd2, address_absent = 3'd3, cache_updated = 3'd4;
 reg [2:0] current_state, next_state;
@@ -26,8 +31,8 @@ assign index = lookup_addr[8:4];
 assign offset = lookup_addr[3:0];
 
 always@(*)begin
-        if(tag_array[index][`valid_bit]) begin
-                if(lookup_addr[13:9] == tag_array[index][`tag_bits]) tag_hit = 1'b1;
+        if(valid_array[index]) begin
+                if(lookup_addr[13:9] == tag_array[index]) tag_hit = 1'b1;
                 else tag_hit = 1'b0;
         end
         else tag_hit = 1'b0;
@@ -36,37 +41,47 @@ end
 assign tag_miss = ~tag_hit & (current_state == start_lookup | current_state == address_absent);
 assign line_addr = lookup_addr;
 assign line_data = data_array[index];
+assign cache_valid = valid_array[index];
+assign cache_dirty = dirty_array[index];
+assign tag_addr    = {tag_array[index], index, 4'b0000};
 
-//On a dirty eviction we drive the outgoing (old) line onto the bus for writeback.
-//On a fill, the memory side drives the incoming line onto the bus and we latch it
-//below - so we release the bus (high-Z) whenever we're not the one evicting.
-assign bidirectional_line_bus = (current_state == address_absent & tag_array[index][`dirty_bit]) ? data_array[index] : {512{1'bz}};
+//The outgoing (old) line for a dirty writeback leaves on line_data. The incoming
+//line arrives on line_bus_in and is latched below on fill_data.
 
-integer i;
-//Upon Reset all the entries in the tag array are invalid and dirty bit should
-//be deasserted
+//Upon Reset all the entries are invalid and the dirty bits are deasserted
 always@(posedge clk_cpu or negedge rst) begin
         if(~rst) begin
-                for(i = 0; i < 32; i = i + 1) tag_array[i][`valid_bit : `dirty_bit] <= 2'b00;
+                valid_array <= 32'd0;
+                dirty_array <= 32'd0;
                 data_out <= 32'd0;
         end
         else begin
                 if(current_state == address_present) begin
-                        if(control_signals == `load_data) data_out <= data_array[index][offset*32 +: 32];
+                        if(control_signals == `load_data) data_out <= data_array[index][(15-offset)*32 +: 32];
                         else if(control_signals == `store_data) begin
-                                data_array[index][offset*32 +: 32] <= cpu_data_in;
-                                tag_array[index][`dirty_bit] <= 1'b1;
+                                data_array[index][(15-offset)*32 +: 32] <= cpu_data_in;
+                                dirty_array[index] <= 1'b1;
                         end
+                        else if(control_signals == `store_stack) begin
+                                data_array[index] <= line_bus_in;
+                                valid_array[index] <= 1'b1;
+                                dirty_array[index] <= 1'b1;
+                         end
                 end
-                else if(current_state == address_absent & fill_data) begin
+               else if(current_state == address_absent & fill_data) begin
                         //Line has arrived from memory via the CDC path - install it and
                         //mark the line valid/clean, tagged to this lookup address.
-                        data_array[index] <= bidirectional_line_bus;
-                        tag_array[index][`valid_bit] <= 1'b1;
-                        tag_array[index][`dirty_bit] <= 1'b0;
-                        tag_array[index][`tag_bits] <= lookup_addr[13:9];
+                        data_array[index] <= line_bus_in;
+                        valid_array[index] <= 1'b1;
+                        dirty_array[index] <= 1'b0;
                 end
         end
+end
+
+//Tag array has no reset, written on the same two events that install a line.
+always@(posedge clk_cpu) begin
+        if((current_state == address_present & control_signals == `store_stack) | (current_state == address_absent & fill_data))
+                tag_array[index] <= lookup_addr[13:9];
 end
 
 always@(posedge clk_cpu or negedge rst) begin
