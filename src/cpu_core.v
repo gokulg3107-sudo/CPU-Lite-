@@ -26,7 +26,7 @@ wire [31:0] rw_wdata;
 
 //Hardware call stack engine (CALL pushes R0..R15 as one line, RET pops it).
 //Declared here because the register file write port below uses them; logic is in the MEM section.
-reg  [2:0]  stk_state;
+reg  [2:0]  stk_state, stk_next_state;
 reg  [3:0]  stk_idx;
 wire        stk_reg_wen, stk_sp_wen;
 wire [31:0] stk_sp_val;
@@ -494,31 +494,36 @@ assign frame_base = {sp_now[13:4] - 10'd1, 4'b0000};
 //START: one cache_start pulse (address/control latched by the interface)
 //FEED : CALL only, R0..R15 on the data bus, one per cycle
 //WAIT : CALL waits for cache_done; RET receives 16 words while cache_done is high
+
+//Stack FSM - state register
 always@(posedge clk_cpu or negedge rst) begin
-        if(~rst) begin
-                stk_state <= STK_IDLE;
-                stk_idx <= 4'd0;
-        end
+        if(~rst) stk_state <= STK_IDLE;
+        else stk_state <= stk_next_state;
+end
+
+//Stack FSM - next state logic
+always@(*) begin
+        case(stk_state)
+        STK_IDLE: stk_next_state = stk_op ? STK_START : STK_IDLE;
+        STK_START: stk_next_state = mem_is_call ? STK_FEED : STK_WAIT;
+        STK_FEED: stk_next_state = (stk_idx == 4'd15) ? STK_WAIT : STK_FEED;
+        STK_WAIT: stk_next_state = stk_finish ? STK_IDLE : STK_WAIT;
+        default: stk_next_state = STK_IDLE;
+        endcase
+end
+
+//Stack word index counter
+always@(posedge clk_cpu or negedge rst) begin
+        if(~rst) stk_idx <= 4'd0;
         else begin
                 case(stk_state)
-                STK_IDLE: begin
-                        stk_idx <= 4'd0;
-                        if(stk_op) stk_state <= STK_START;
-                end
-                STK_START: stk_state <= mem_is_call ? STK_FEED : STK_WAIT;
-                STK_FEED: begin
-                        stk_idx <= stk_idx + 1'b1;
-                        if(stk_idx == 4'd15) stk_state <= STK_WAIT;
-                end
-                STK_WAIT: begin
-                        if(cache_done) stk_idx <= stk_idx + 1'b1;
-                        if(stk_finish) stk_state <= STK_IDLE;
-                end
-                default: stk_state <= STK_IDLE;
+                STK_IDLE: stk_idx <= 4'd0;
+                STK_FEED: stk_idx <= stk_idx + 1'b1;
+                STK_WAIT: if(cache_done) stk_idx <= stk_idx + 1'b1;
+                default: stk_idx <= stk_idx;
                 endcase
         end
 end
-
 assign stk_finish  = (stk_state == STK_WAIT) & cache_done & (mem_is_call | (stk_idx == 4'd15));
 assign stk_reg_wen = (stk_state == STK_WAIT) & mem_is_ret & cache_done & RESTORE_MASK[stk_idx];
 assign stk_sp_wen  = stk_finish & mem_is_call;
