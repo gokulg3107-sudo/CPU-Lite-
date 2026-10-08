@@ -2,7 +2,7 @@
 module cpu_lite(clk_cpu, clk_mem, rst, program_memory_data, program_memory_addr);
 input clk_cpu, clk_mem, rst;
 input [31:0] program_memory_data;
-input [11:0] program_memory_addr;
+output [11:0] program_memory_addr;
 wire rst_mem;
 reg reset_in;
 always@(posedge clk_cpu or negedge rst) begin
