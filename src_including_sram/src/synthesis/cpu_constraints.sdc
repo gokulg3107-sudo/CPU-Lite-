@@ -1,0 +1,11 @@
+create_clock -name clk_cpu -period 6.67 [get_ports clk_cpu]
+create_clock -name clk_mem -period 13.34 [get_ports clk_mem]
+set_clock_groups -asynchronous -group clk_cpu -group clk_mem
+set_clock_uncertainty  -setup 0.67 [get_ports clk_cpu]
+set_clock_uncertainty -hold 0.033 [get_ports clk_cpu]
+set_clock_uncertainty  -setup 1.33 [get_ports clk_mem]
+set_clock_uncertainty -hold 0.067 [get_ports clk_mem]
+set_input_delay -clock clk_cpu -min 2 [get_ports program_memory_data]
+set_input_delay -clock clk_cpu -min 2 [get_ports program_memory_data]
+set_output_delay -clock clk_cpu -max 3 [get_ports program_memory_addr]
+set_output_delay -clock clk_cpu -max 3 [get_ports program_memory_addr]
